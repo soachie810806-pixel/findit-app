@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>找找 FindIt — 極簡語音尋物</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <meta name="theme-color" content="#F97316" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="找找 FindIt" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%23F97316'/%3E%3Ccircle cx='50' cy='50' r='26' fill='none' stroke='white' stroke-width='8'/%3E%3Ccircle cx='50' cy='50' r='10' fill='white'/%3E%3C/svg%3E" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%23F97316'/%3E%3Ccircle cx='50' cy='50' r='26' fill='none' stroke='white' stroke-width='8'/%3E%3Ccircle cx='50' cy='50' r='10' fill='white'/%3E%3C/svg%3E" />
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap');
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: 'Inter', 'Noto Sans TC', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #F3F1EC;
+      color: #1E293B;
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+    }
+
+    @keyframes pulse-ring {
+      0% { transform: scale(0.95); opacity: 0.65; }
+      75% { transform: scale(1.45); opacity: 0; }
+      100% { transform: scale(1.5); opacity: 0; }
+    }
+
+    .mic-listening::before,
+    .mic-listening::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 9999px;
+      background-color: #F97316;
+      animation: pulse-ring 1.6s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+      z-index: 0;
+    }
+    .mic-listening::after {
+      animation-delay: 0.65s;
+    }
+
+    @keyframes wave {
+      0%, 100% { height: 10px; }
+      50% { height: 36px; }
+    }
+    .wave-bar {
+      animation: wave 0.85s ease-in-out infinite;
+    }
+    .wave-bar:nth-child(2) { animation-delay: 0.15s; }
+    .wave-bar:nth-child(3) { animation-delay: 0.3s; }
+    .wave-bar:nth-child(4) { animation-delay: 0.45s; }
+    .wave-bar:nth-child(5) { animation-delay: 0.2s; }
+
+    .slide-up {
+      animation: slideUp 0.22s ease-out forwards;
+    }
+    @keyframes slideUp {
+      from { transform: translateY(24px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+  </style>
+</head>
+<body class="flex justify-center items-start md:py-6 md:px-4">
+
+  <!-- Mobile App Shell -->
+  <div id="appShell" class="relative mx-auto w-full max-w-[440px] min-h-screen md:min-h-[780px] md:max-h-[880px] md:rounded-[34px] bg-[#FAF9F6] md:shadow-2xl md:border md:border-[#E7E2D8] flex flex-col overflow-hidden">
+
+    <!-- Minimal Top Bar -->
+    <header class="px-5 pt-5 pb-3 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center text-white shadow-xs">
+          <i data-lucide="radar" class="w-4 h-4"></i>
+        </div>
+        <span class="text-base font-bold tracking-tight text-slate-900">找找 FindIt</span>
+      </div>
+      <button id="btnSoundToggle" type="button" title="切換提醒音效" class="p-2 rounded-xl text-slate-500 hover:bg-slate-200/60 active:scale-95 transition">
+        <i data-lucide="volume-2" class="w-4 h-4"></i>
+      </button>
+    </header>
+
+    <!-- Live Reminder Alert Banner -->
+    <div id="liveAlertBanner" class="hidden mx-5 mb-2 p-3.5 rounded-2xl bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-lg slide-up z-20">
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex items-start gap-2.5">
+          <div class="p-1.5 bg-white/20 rounded-xl mt-0.5">
+            <i data-lucide="bell-ring" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-teal-100">尋物提醒時間到</p>
+            <p id="liveAlertText" class="text-sm font-bold mt-0.5"></p>
+          </div>
+        </div>
+        <button id="btnDismissBanner" type="button" class="p-1 rounded-lg hover:bg-white/20 transition">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 flex flex-col overflow-y-auto px-5 pb-24">
+
+      <!-- VIEW 1: PURE VOICE RECORDING SCREEN (Default Landing) -->
+      <section id="viewRecord" class="flex-1 flex flex-col items-center justify-center text-center py-6">
+        <div class="mb-8">
+          <h1 id="micTitle" class="text-2xl font-bold text-slate-900 tracking-tight">點擊麥克風開始說話</h1>
+          <p id="micSubtitle" class="text-sm text-slate-500 mt-1.5">說出物品與放置位置，錄完立即設定提醒</p>
+        </div>
+
+        <!-- Big Hero Mic Button -->
+        <div class="relative flex items-center justify-center my-4">
+          <button
+            id="btnHeroMic"
+            type="button"
+            aria-label="開始或停止語音記錄"
+            class="relative w-36 h-36 rounded-full bg-gradient-to-br from-orange-500 to-amber-500 text-white flex flex-col items-center justify-center shadow-xl hover:shadow-2xl active:scale-95 transition z-10"
+          >
+            <i id="heroMicIcon" data-lucide="mic" class="w-12 h-12 relative z-10"></i>
+            <span id="heroMicLabel" class="text-xs font-bold mt-1.5 relative z-10 tracking-wide">按一下說話</span>
+          </button>
+        </div>
+
+        <!-- Waveform + Live Transcript Preview -->
+        <div id="listeningBox" class="hidden mt-6 w-full max-w-[340px] flex flex-col items-center">
+          <div class="flex items-center justify-center gap-1.5 h-10 mb-3">
+            <span class="wave-bar w-1.5 bg-orange-500 rounded-full"></span>
+            <span class="wave-bar w-1.5 bg-orange-500 rounded-full"></span>
+            <span class="wave-bar w-1.5 bg-orange-500 rounded-full"></span>
+            <span class="wave-bar w-1.5 bg-orange-500 rounded-full"></span>
+            <span class="wave-bar w-1.5 bg-orange-500 rounded-full"></span>
+          </div>
+          <p id="liveTranscript" class="text-sm font-medium text-slate-700 bg-white px-4 py-2.5 rounded-2xl border border-[#E8E4DC] shadow-xs min-h-[42px] w-full">
+            正在聆聽...
+          </p>
+          <p class="text-xs text-slate-400 mt-2">說完請再按一次麥克風結束錄音</p>
+        </div>
+
+        <!-- Quick Simulation Buttons (for environments without a mic) -->
+        <div id="quickDemoBox" class="mt-10 w-full max-w-[360px]">
+          <p class="text-[11px] font-medium text-slate-400 mb-2.5">無麥克風環境可點選下方範例模擬錄音完成：</p>
+          <div class="flex flex-wrap justify-center gap-2">
+            <button type="button" class="demo-voice-btn text-xs px-3 py-1.5 rounded-full bg-white border border-[#E5E0D5] text-slate-700 hover:border-orange-400 hover:text-orange-600 active:scale-95 transition">
+              車鑰匙放在玄關鞋櫃上
+            </button>
+            <button type="button" class="demo-voice-btn text-xs px-3 py-1.5 rounded-full bg-white border border-[#E5E0D5] text-slate-700 hover:border-orange-400 hover:text-orange-600 active:scale-95 transition">
+              護照收在主臥室衣櫃密碼盒
+            </button>
+            <button type="button" class="demo-voice-btn text-xs px-3 py-1.5 rounded-full bg-white border border-[#E5E0D5] text-slate-700 hover:border-orange-400 hover:text-orange-600 active:scale-95 transition">
+              無線耳機放在書房螢幕下方
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW 2: SAVED RECORDS & REMINDERS -->
+      <section id="viewRecords" class="hidden pt-2 space-y-3">
+        <div class="flex items-center justify-between mb-1">
+          <h2 class="text-base font-bold text-slate-900">我的尋物紀錄</h2>
+          <span id="recordsCountLabel" class="text-xs font-semibold text-slate-500">0 筆</span>
+        </div>
+        <div id="recordsList" class="space-y-2.5"></div>
+      </section>
+
+    </main>
+
+    <!-- Bottom 2-Tab Navigation -->
+    <nav class="sticky bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#ECE8E0] px-6 py-2.5">
+      <div class="grid grid-cols-2 gap-3">
+        <button data-tab="record" type="button" class="nav-tab flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-orange-50 text-orange-600 font-bold text-sm transition">
+          <i data-lucide="mic" class="w-4 h-4"></i>
+          <span>語音錄製</span>
+        </button>
+        <button data-tab="records" type="button" class="nav-tab relative flex items-center justify-center gap-2 py-2.5 rounded-2xl text-slate-500 hover:bg-slate-100 font-semibold text-sm transition">
+          <i data-lucide="list-checks" class="w-4 h-4"></i>
+          <span>已記錄</span>
+          <span id="navBadgeCount" class="text-xs px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-700 font-bold">0</span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- MODAL: Immediate Reminder Picker After Recording Ends -->
+    <div id="reminderSheet" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-end md:items-center justify-center p-0 md:p-4">
+      <div class="w-full max-w-[440px] bg-white rounded-t-[28px] md:rounded-[28px] p-5 shadow-2xl slide-up">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-teal-500"></span>
+            <h3 class="text-base font-bold text-slate-900">何時提醒你找回？</h3>
+          </div>
+          <button id="btnCancelSheet" type="button" class="p-1.5 rounded-full bg-slate-100 text-slate-500 hover:text-slate-800">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <!-- Recorded Voice Text Display -->
+        <div class="bg-[#FAF8F4] border border-[#E8E4DC] rounded-2xl p-3.5 mb-4">
+          <p class="text-[11px] font-semibold text-slate-400 mb-1">剛剛錄下的內容</p>
+          <p id="sheetTranscriptText" class="text-sm font-bold text-slate-900 leading-relaxed"></p>
+        </div>
+
+        <!-- One-Tap Reminder Time Options -->
+        <div class="grid grid-cols-2 gap-2.5 mb-3">
+          <button type="button" data-rem-mode="none" class="rem-choice-btn py-3 px-3 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition">
+            不用提醒，直接儲存
+          </button>
+          <button type="button" data-rem-mode="10s" class="rem-choice-btn py-3 px-3 rounded-2xl border border-teal-200 bg-teal-50 hover:bg-teal-100 text-teal-800 text-xs font-bold transition">
+            ⚡ 10 秒後（立即測試）
+          </button>
+          <button type="button" data-rem-mode="1h" class="rem-choice-btn py-3 px-3 rounded-2xl border border-slate-200 bg-white hover:border-orange-400 text-slate-800 text-xs font-bold transition">
+            1 小時後
+          </button>
+          <button type="button" data-rem-mode="tomorrow9" class="rem-choice-btn py-3 px-3 rounded-2xl border border-slate-200 bg-white hover:border-orange-400 text-slate-800 text-xs font-bold transition">
+            明天早上 9:00
+          </button>
+          <button type="button" data-rem-mode="3d" class="rem-choice-btn py-3 px-3 rounded-2xl border border-slate-200 bg-white hover:border-orange-400 text-slate-800 text-xs font-bold transition">
+            3 天後此時
+          </button>
+          <button type="button" data-rem-mode="7d" class="rem-choice-btn py-3 px-3 rounded-2xl border border-slate-200 bg-white hover:border-orange-400 text-slate-800 text-xs font-bold transition">
+            7 天後此時
+          </button>
+        </div>
+
+        <!-- Custom Datetime Picker (No Text Input) -->
+        <div class="pt-3 border-t border-slate-100 flex items-center gap-2">
+          <input id="customTimePicker" type="datetime-local" class="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-800 outline-none focus:border-teal-500" />
+          <button id="btnSaveCustomTime" type="button" class="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shrink-0 transition">
+            自訂提醒
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="hidden fixed top-5 left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-full bg-slate-900 text-white text-xs font-semibold shadow-lg flex items-center gap-2 whitespace-nowrap">
+      <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400"></i>
+      <span id="toastText"></span>
+    </div>
+
+  </div>
+
+  <script>
+    (function () {
+      const STORAGE_KEY = 'findit_minimal_voice_v2';
+      const DAY = 86400000;
+
+      let state = {
+        records: [],
+        activeTab: 'record',
+        soundEnabled: true,
+        pendingTranscript: '',
+        editingReminderId: null
+      };
+
+      function getDefaultRecords() {
+        const now = Date.now();
+        return [
+          {
+            id: 'rec-1',
+            text: '備用車鑰匙放在玄關白色鞋櫃上層',
+            createdAt: now - 3600000,
+            reminderAt: now + 2 * 3600000,
+            triggered: false
+          },
+          {
+            id: 'rec-2',
+            text: '護照收在主臥室衣櫃右上角密碼盒',
+            createdAt: now - 3 * DAY,
+            reminderAt: null,
+            triggered: false
+          }
+        ];
+      }
+
+      function loadState() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+              state.records = parsed;
+              return;
+            }
+          }
+        } catch (e) {}
+        state.records = getDefaultRecords();
+        saveState();
+      }
+
+      function saveState() {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state.records));
+        } catch (e) {}
+      }
+
+      function playChime() {
+        if (!state.soundEnabled) return;
+        try {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (!AudioCtx) return;
+          const ctx = new AudioCtx();
+          [587.33, 880, 1174.66].forEach((freq, idx) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.12);
+            gain.gain.setValueAtTime(0.001, ctx.currentTime + idx * 0.12);
+            gain.gain.exponentialRampToValueAtTime(0.14, ctx.currentTime + idx * 0.12 + 0.03);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.12 + 0.45);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(ctx.currentTime + idx * 0.12);
+            osc.stop(ctx.currentTime + idx * 0.12 + 0.48);
+          });
+        } catch (e) {}
+      }
+
+      let toastTimer = null;
+      function showToast(msg) {
+        document.getElementById('toastText').textContent = msg;
+        const el = document.getElementById('toast');
+        el.classList.remove('hidden');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => el.classList.add('hidden'), 2600);
+      }
+
+      function toLocalDatetimeValue(date) {
+        const pad = n => String(n).padStart(2, '0');
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+      }
+
+      function formatRelative(ts) {
+        const mins = Math.floor((Date.now() - ts) / 60000);
+        if (mins < 1) return '剛剛';
+        if (mins < 60) return `${mins} 分鐘前`;
+        const hrs = Math.floor(mins / 60);
+        if (hrs < 24) return `${hrs} 小時前`;
+        return `${Math.floor(hrs / 24)} 天前`;
+      }
+
+      function formatReminder(ts) {
+        if (!ts) return '';
+        const d = new Date(ts);
+        const pad = n => String(n).padStart(2, '0');
+        return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      }
+
+      function escapeHtml(str) {
+        return String(str || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+      }
+
+      // Render UI
+      function render() {
+        document.getElementById('viewRecord').classList.toggle('hidden', state.activeTab !== 'record');
+        document.getElementById('viewRecords').classList.toggle('hidden', state.activeTab !== 'records');
+
+        document.getElementById('navBadgeCount').textContent = state.records.length;
+        document.getElementById('recordsCountLabel').textContent = `${state.records.length} 筆`;
+
+        document.querySelectorAll('.nav-tab').forEach(btn => {
+          const active = btn.dataset.tab === state.activeTab;
+          if (active) {
+            btn.className = 'nav-tab relative flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-orange-50 text-orange-600 font-bold text-sm transition';
+          } else {
+            btn.className = 'nav-tab relative flex items-center justify-center gap-2 py-2.5 rounded-2xl text-slate-500 hover:bg-slate-100 font-semibold text-sm transition';
+          }
+        });
+
+        const listEl = document.getElementById('recordsList');
+        if (state.records.length === 0) {
+          listEl.innerHTML = `
+            <div class="bg-white rounded-2xl p-8 text-center border border-dashed border-slate-300 mt-4">
+              <p class="text-sm font-bold text-slate-700">目前還沒有語音紀錄</p>
+              <p class="text-xs text-slate-500 mt-1">回到「語音錄製」點擊大麥克風即可快速記下物品位置。</p>
+            </div>
+          `;
+        } else {
+          listEl.innerHTML = state.records.map(rec => {
+            const hasRem = Boolean(rec.reminderAt);
+            const isPast = hasRem && rec.reminderAt <= Date.now();
+            return `
+              <article class="bg-white rounded-2xl p-4 border border-[#E8E4DC] shadow-xs space-y-2.5">
+                <div class="flex items-start justify-between gap-2">
+                  <p class="text-sm font-bold text-slate-900 leading-snug">${escapeHtml(rec.text)}</p>
+                  <span class="text-[11px] text-slate-400 shrink-0">${formatRelative(rec.createdAt)}</span>
+                </div>
+                <div class="flex items-center justify-between gap-2 pt-1">
+                  <div>
+                    ${hasRem ? `
+                      <span class="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full ${isPast ? 'bg-rose-100 text-rose-700' : 'bg-teal-50 text-teal-700'}">
+                        <i data-lucide="bell" class="w-3 h-3"></i>
+                        ${isPast ? '已到期 · ' : ''}${formatReminder(rec.reminderAt)}
+                      </span>
+                    ` : `<span class="text-[11px] text-slate-400">未設定提醒</span>`}
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <button type="button" data-action="remind" data-id="${rec.id}" class="rec-btn px-2.5 py-1.5 rounded-xl bg-teal-50 text-teal-700 text-xs font-semibold hover:bg-teal-100 transition">
+                      提醒
+                    </button>
+                    <button type="button" data-action="done" data-id="${rec.id}" class="rec-btn px-2.5 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition">
+                      已找回
+                    </button>
+                  </div>
+                </div>
+              </article>
+            `;
+          }).join('');
+        }
+
+        if (window.lucide) lucide.createIcons();
+      }
+
+      // Open Reminder Sheet immediately after recording ends
+      function openReminderSheet(transcriptText, existingId = null) {
+        state.pendingTranscript = transcriptText;
+        state.editingReminderId = existingId;
+        document.getElementById('sheetTranscriptText').textContent = transcriptText;
+        document.getElementById('customTimePicker').value = toLocalDatetimeValue(new Date(Date.now() + 3600000));
+        document.getElementById('reminderSheet').classList.remove('hidden');
+      }
+
+      function closeReminderSheet() {
+        document.getElementById('reminderSheet').classList.add('hidden');
+        state.pendingTranscript = '';
+        state.editingReminderId = null;
+      }
+
+      function commitRecordWithReminder(reminderTs) {
+        if (state.editingReminderId) {
+          const target = state.records.find(r => r.id === state.editingReminderId);
+          if (target) {
+            target.reminderAt = reminderTs;
+            target.triggered = false;
+          }
+          showToast(reminderTs ? '已更新提醒時間' : '已取消提醒');
+        } else {
+          state.records.unshift({
+            id: 'rec-' + Date.now(),
+            text: state.pendingTranscript,
+            createdAt: Date.now(),
+            reminderAt: reminderTs,
+            triggered: false
+          });
+          showToast(reminderTs ? '已儲存紀錄並設定提醒' : '已儲存語音紀錄');
+        }
+        saveState();
+        closeReminderSheet();
+        render();
+      }
+
+      // Web Speech API Recording Flow
+      let recognition = null;
+      let isRecording = false;
+      let capturedSpeech = '';
+
+      function setRecordingUI(active) {
+        isRecording = active;
+        const btn = document.getElementById('btnHeroMic');
+        const label = document.getElementById('heroMicLabel');
+        const title = document.getElementById('micTitle');
+        const box = document.getElementById('listeningBox');
+
+        if (active) {
+          btn.classList.add('mic-listening');
+          label.textContent = '點擊結束';
+          title.textContent = '正在聆聽中...';
+          box.classList.remove('hidden');
+        } else {
+          btn.classList.remove('mic-listening');
+          label.textContent = '按一下說話';
+          title.textContent = '點擊麥克風開始說話';
+          box.classList.add('hidden');
+        }
+      }
+
+      function finishRecording() {
+        const text = capturedSpeech.trim();
+        if (recognition) {
+          try { recognition.stop(); } catch (e) {}
+          recognition = null;
+        }
+        setRecordingUI(false);
+        if (text) {
+          openReminderSheet(text);
+        } else {
+          showToast('沒有偵測到語音內容，可再試一次或點選下方範例');
+        }
+      }
+
+      function startRecording() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+          showToast('此環境不支援即時麥克風，請點選下方範例體驗');
+          return;
+        }
+        capturedSpeech = '';
+        document.getElementById('liveTranscript').textContent = '正在聆聽...';
+        try {
+          recognition = new SpeechRecognition();
+          recognition.lang = 'zh-TW';
+          recognition.interimResults = true;
+          recognition.continuous = true;
+
+          recognition.onstart = () => {
+            setRecordingUI(true);
+          };
+
+          recognition.onresult = (event) => {
+            let full = '';
+            for (let i = 0; i < event.results.length; i++) {
+              full += event.results[i][0].transcript;
+            }
+            capturedSpeech = full;
+            document.getElementById('liveTranscript').textContent = full || '正在聆聽...';
+          };
+
+          recognition.onerror = () => {
+            setRecordingUI(false);
+            recognition = null;
+            showToast('無法存取麥克風權限，可點選下方範例體驗');
+          };
+
+          recognition.onend = () => {
+            if (isRecording) {
+              finishRecording();
+            }
+          };
+
+          recognition.start();
+        } catch (e) {
+          setRecordingUI(false);
+          showToast('無法啟動麥克風，請改用下方範例測試');
+        }
+      }
+
+      // Reminder Polling
+      function checkReminders() {
+        const nowTs = Date.now();
+        let fired = null;
+        state.records.forEach(rec => {
+          if (rec.reminderAt && !rec.triggered && rec.reminderAt <= nowTs) {
+            rec.triggered = true;
+            fired = rec;
+          }
+        });
+        if (fired) {
+          saveState();
+          document.getElementById('liveAlertText').textContent = fired.text;
+          document.getElementById('liveAlertBanner').classList.remove('hidden');
+          playChime();
+          render();
+        }
+      }
+
+      // Bind Events
+      document.getElementById('btnHeroMic').addEventListener('click', () => {
+        if (isRecording) finishRecording();
+        else startRecording();
+      });
+
+      document.querySelectorAll('.demo-voice-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          openReminderSheet(btn.textContent.trim());
+        });
+      });
+
+      document.querySelectorAll('.nav-tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.activeTab = btn.dataset.tab;
+          render();
+        });
+      });
+
+      document.getElementById('recordsList').addEventListener('click', (e) => {
+        const btn = e.target.closest('.rec-btn');
+        if (!btn) return;
+        const id = btn.dataset.id;
+        const action = btn.dataset.action;
+        const rec = state.records.find(r => r.id === id);
+        if (!rec) return;
+
+        if (action === 'done') {
+          state.records = state.records.filter(r => r.id !== id);
+          saveState();
+          render();
+          showToast('已標記為找回並移除');
+        } else if (action === 'remind') {
+          openReminderSheet(rec.text, rec.id);
+        }
+      });
+
+      document.getElementById('btnCancelSheet').addEventListener('click', closeReminderSheet);
+
+      document.querySelectorAll('.rem-choice-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const mode = btn.dataset.remMode;
+          const now = Date.now();
+          let ts = null;
+          if (mode === '10s') ts = now + 10000;
+          else if (mode === '1h') ts = now + 3600000;
+          else if (mode === 'tomorrow9') {
+            const d = new Date(now + DAY);
+            d.setHours(9, 0, 0, 0);
+            ts = d.getTime();
+          } else if (mode === '3d') ts = now + 3 * DAY;
+          else if (mode === '7d') ts = now + 7 * DAY;
+          commitRecordWithReminder(ts);
+        });
+      });
+
+      document.getElementById('btnSaveCustomTime').addEventListener('click', () => {
+        const val = document.getElementById('customTimePicker').value;
+        if (!val) {
+          showToast('請先選擇日期與時間');
+          return;
+        }
+        commitRecordWithReminder(new Date(val).getTime());
+      });
+
+      document.getElementById('btnDismissBanner').addEventListener('click', () => {
+        document.getElementById('liveAlertBanner').classList.add('hidden');
+      });
+
+      document.getElementById('btnSoundToggle').addEventListener('click', () => {
+        state.soundEnabled = !state.soundEnabled;
+        const icon = document.querySelector('#btnSoundToggle i');
+        if (icon) icon.setAttribute('data-lucide', state.soundEnabled ? 'volume-2' : 'volume-x');
+        if (window.lucide) lucide.createIcons();
+        showToast(state.soundEnabled ? '已開啟提醒音效' : '已靜音提醒音效');
+      });
+
+      loadState();
+      render();
+      setInterval(checkReminders, 1000);
+    })();
+  </script>
+</body>
+</html>
