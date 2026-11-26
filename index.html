@@ -153,7 +153,7 @@
               車鑰匙放在玄關鞋櫃上
             </button>
             <button type="button" class="demo-voice-btn text-xs px-3 py-1.5 rounded-full bg-white border border-[#E5E0D5] text-slate-700 hover:border-orange-400 hover:text-orange-600 active:scale-95 transition">
-              護照收在主臥室衣櫃密碼盒
+              護照收在主臥室衣櫃，明天早上八點提醒我
             </button>
             <button type="button" class="demo-voice-btn text-xs px-3 py-1.5 rounded-full bg-white border border-[#E5E0D5] text-slate-700 hover:border-orange-400 hover:text-orange-600 active:scale-95 transition">
               無線耳機放在書房螢幕下方
@@ -202,9 +202,20 @@
         </div>
 
         <!-- Recorded Voice Text Display -->
-        <div class="bg-[#FAF8F4] border border-[#E8E4DC] rounded-2xl p-3.5 mb-4">
+        <div class="bg-[#FAF8F4] border border-[#E8E4DC] rounded-2xl p-3.5 mb-3">
           <p class="text-[11px] font-semibold text-slate-400 mb-1">剛剛錄下的內容</p>
           <p id="sheetTranscriptText" class="text-sm font-bold text-slate-900 leading-relaxed"></p>
+        </div>
+
+        <!-- Auto-detected Time CTA (Shown when speech contains a time phrase) -->
+        <div id="autoDetectedTimeBox" class="hidden mb-3">
+          <button id="btnConfirmAutoTime" type="button" class="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white shadow-md flex items-center justify-between gap-2 active:scale-[0.99] transition">
+            <span class="flex items-center gap-2 text-xs font-bold">
+              <i data-lucide="sparkles" class="w-4 h-4"></i>
+              <span id="autoDetectedTimeLabel">已辨識時間</span>
+            </span>
+            <span class="text-xs font-bold bg-white/20 px-2.5 py-1 rounded-full">一鍵確認</span>
+          </button>
         </div>
 
         <!-- One-Tap Reminder Time Options -->
@@ -462,13 +473,140 @@
         if (window.lucide) lucide.createIcons();
       }
 
+      function zhNumToInt(token) {
+        if (!token) return NaN;
+        if (/^\d+$/.test(token)) return parseInt(token, 10);
+        const map = { '零': 0, '一': 1, '二': 2, '兩': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10, '十一': 11, '十二': 12 };
+        if (map[token] !== undefined) return map[token];
+        if (token.startsWith('十') && token.length === 2 && map[token[1]] !== undefined) return 10 + map[token[1]];
+        if (token.length === 2 && token[1] === '十' && map[token[0]] !== undefined) return map[token[0]] * 10;
+        if (token.length === 3 && token[1] === '十' && map[token[0]] !== undefined && map[token[2]] !== undefined) {
+          return map[token[0]] * 10 + map[token[2]];
+        }
+        return NaN;
+      }
+
+      function parseReminderFromSpeech(text) {
+        const str = (text || '').trim();
+        const now = new Date();
+        const nowTs = now.getTime();
+
+        // 1. N 秒後
+        const secMatch = str.match(/(\d+|[一二兩三四五六七八九十]+)\s*秒後/);
+        if (secMatch) {
+          const v = zhNumToInt(secMatch[1]);
+          if (!isNaN(v)) return nowTs + v * 1000;
+        }
+
+        // 2. N 分鐘後
+        const minMatch = str.match(/(\d+|[一二兩三四五六七八九十]+)\s*分鐘?後/);
+        if (minMatch) {
+          const v = zhNumToInt(minMatch[1]);
+          if (!isNaN(v)) return nowTs + v * 60000;
+        }
+
+        // 3. 半小時後 / N 小時後
+        if (/半\s*(?:個)?(?:小時|鐘頭)後/.test(str)) {
+          return nowTs + 30 * 60000;
+        }
+        const hrMatch = str.match(/(\d+|[一二兩三四五六七八九十]+)\s*(?:個)?(?:小時|鐘頭)後/);
+        if (hrMatch) {
+          const v = zhNumToInt(hrMatch[1]);
+          if (!isNaN(v)) return nowTs + v * 3600000;
+        }
+
+        // Helper to parse clock time like 早上八點半 / 晚上9點15分
+        function extractClock(s) {
+          const periodMatch = s.match(/(早上|上午|清晨|中午|下午|傍晚|晚上|今晚)/);
+          const period = periodMatch ? periodMatch[1] : '';
+          const timeMatch = s.match(/(\d+|[一二兩三四五六七八九十]+)\s*[點時](?:\s*(半)|\s*(\d+|[一二兩三四五六七八九十]+)\s*分)?/);
+          if (!timeMatch) return null;
+          let h = zhNumToInt(timeMatch[1]);
+          if (isNaN(h)) return null;
+          let m = 0;
+          if (timeMatch[2] === '半') m = 30;
+          else if (timeMatch[3]) {
+            const parsedM = zhNumToInt(timeMatch[3]);
+            if (!isNaN(parsedM)) m = parsedM;
+          }
+          if ((period === '下午' || period === '傍晚' || period === '晚上' || period === '今晚') && h < 12) {
+            h += 12;
+          } else if (period === '中午' && h < 11) {
+            h += 12;
+          }
+          return { h, m };
+        }
+
+        const clock = extractClock(str);
+
+        // 4. N 天後
+        const dayAfterMatch = str.match(/(\d+|[一二兩三四五六七八九十]+)\s*天後/);
+        if (dayAfterMatch) {
+          const days = zhNumToInt(dayAfterMatch[1]);
+          if (!isNaN(days)) {
+            const d = new Date(nowTs + days * DAY);
+            d.setHours(clock ? clock.h : 9, clock ? clock.m : 0, 0, 0);
+            return d.getTime();
+          }
+        }
+
+        // 5. 明天 / 明早 / 後天
+        if (/(明天|明早|明日)/.test(str)) {
+          const d = new Date(nowTs + DAY);
+          d.setHours(clock ? clock.h : 9, clock ? clock.m : 0, 0, 0);
+          return d.getTime();
+        }
+        if (/後天/.test(str)) {
+          const d = new Date(nowTs + 2 * DAY);
+          d.setHours(clock ? clock.h : 9, clock ? clock.m : 0, 0, 0);
+          return d.getTime();
+        }
+
+        // 6. 下週X / 下周X
+        const weekMatch = str.match(/(?:下週|下周)([一二三四五六日天])/);
+        if (weekMatch) {
+          const wkMap = { '日': 0, '天': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6 };
+          const targetDay = wkMap[weekMatch[1]];
+          const curDay = now.getDay();
+          const daysUntilNextMonday = ((8 - curDay) % 7) || 7;
+          const offsetFromNextMon = targetDay === 0 ? 6 : targetDay - 1;
+          const d = new Date(nowTs + (daysUntilNextMonday + offsetFromNextMon) * DAY);
+          d.setHours(clock ? clock.h : 9, clock ? clock.m : 0, 0, 0);
+          return d.getTime();
+        }
+
+        // 7. 今天 / 今晚 + clock
+        if (clock) {
+          const d = new Date(nowTs);
+          d.setHours(clock.h, clock.m, 0, 0);
+          if (d.getTime() <= nowTs) d.setTime(d.getTime() + DAY);
+          return d.getTime();
+        }
+
+        return null;
+      }
+
+      let detectedAutoTs = null;
+
       // Open Reminder Sheet immediately after recording ends
       function openReminderSheet(transcriptText, existingId = null) {
         state.pendingTranscript = transcriptText;
         state.editingReminderId = existingId;
         document.getElementById('sheetTranscriptText').textContent = transcriptText;
-        document.getElementById('customTimePicker').value = toLocalDatetimeValue(new Date(Date.now() + 3600000));
+
+        detectedAutoTs = existingId ? null : parseReminderFromSpeech(transcriptText);
+        const autoBox = document.getElementById('autoDetectedTimeBox');
+        if (detectedAutoTs) {
+          document.getElementById('autoDetectedTimeLabel').textContent = `語音偵測時間：${formatReminder(detectedAutoTs)}`;
+          autoBox.classList.remove('hidden');
+          document.getElementById('customTimePicker').value = toLocalDatetimeValue(new Date(detectedAutoTs));
+        } else {
+          autoBox.classList.add('hidden');
+          document.getElementById('customTimePicker').value = toLocalDatetimeValue(new Date(Date.now() + 3600000));
+        }
+
         document.getElementById('reminderSheet').classList.remove('hidden');
+        if (window.lucide) lucide.createIcons();
       }
 
       function closeReminderSheet() {
@@ -734,6 +872,11 @@
       });
 
       document.getElementById('btnCancelSheet').addEventListener('click', closeReminderSheet);
+      document.getElementById('btnConfirmAutoTime').addEventListener('click', () => {
+        if (detectedAutoTs) {
+          commitRecordWithReminder(detectedAutoTs);
+        }
+      });
 
       document.querySelectorAll('.rem-choice-btn').forEach(btn => {
         btn.addEventListener('click', () => {
