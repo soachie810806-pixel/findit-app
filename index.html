@@ -239,6 +239,42 @@
       </div>
     </div>
 
+
+    <!-- MODAL: Calendar Sync Prompt (Works even when webpage is closed) -->
+    <div id="calendarSyncModal" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-end md:items-center justify-center p-0 md:p-4">
+      <div class="w-full max-w-[440px] bg-white rounded-t-[28px] md:rounded-[28px] p-5 shadow-2xl slide-up">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-orange-500"></span>
+            <h3 class="text-base font-bold text-slate-900">關掉網頁也要準時提醒？</h3>
+          </div>
+          <button id="btnCloseCalModal" type="button" class="p-1.5 rounded-full bg-slate-100 text-slate-500 hover:text-slate-800">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+        <p class="text-xs text-slate-500 mb-3 leading-relaxed">
+          純網頁關閉後無法在背景計時，建議順手存進手機行事曆，時間到就會由系統震動響鈴通知你：
+        </p>
+        <div class="bg-[#FAF8F4] border border-[#E8E4DC] rounded-2xl p-3 mb-4">
+          <p id="calSyncText" class="text-sm font-bold text-slate-900"></p>
+          <p id="calSyncTime" class="text-xs font-semibold text-teal-700 mt-1"></p>
+        </div>
+        <div class="space-y-2.5">
+          <button id="btnDownloadIcs" type="button" class="w-full py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center justify-center gap-2 transition">
+            <i data-lucide="calendar-plus" class="w-4 h-4"></i>
+            加入 iPhone / 手機內建行事曆（推薦）
+          </button>
+          <a id="btnGoogleCal" href="#" target="_blank" rel="noopener noreferrer" class="w-full py-3 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold flex items-center justify-center gap-2 transition">
+            <i data-lucide="external-link" class="w-4 h-4 text-orange-500"></i>
+            加入 Google 日曆
+          </a>
+          <button id="btnSkipCalSync" type="button" class="w-full py-2 text-xs font-semibold text-slate-400 hover:text-slate-600 transition">
+            先不用，僅保留在網頁內提醒
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Toast -->
     <div id="toast" class="hidden fixed top-5 left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-full bg-slate-900 text-white text-xs font-semibold shadow-lg flex items-center gap-2 whitespace-nowrap">
       <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400"></i>
@@ -405,6 +441,11 @@
                     ` : `<span class="text-[11px] text-slate-400">未設定提醒</span>`}
                   </div>
                   <div class="flex items-center gap-1.5">
+                    ${hasRem ? `
+                      <button type="button" data-action="calendar" data-id="${rec.id}" class="rec-btn px-2.5 py-1.5 rounded-xl bg-orange-50 text-orange-700 text-xs font-semibold hover:bg-orange-100 transition">
+                        加行事曆
+                      </button>
+                    ` : ''}
                     <button type="button" data-action="remind" data-id="${rec.id}" class="rec-btn px-2.5 py-1.5 rounded-xl bg-teal-50 text-teal-700 text-xs font-semibold hover:bg-teal-100 transition">
                       提醒
                     </button>
@@ -436,27 +477,112 @@
         state.editingReminderId = null;
       }
 
+      let activeCalendarRecord = null;
+
+      function formatIcsDate(ts) {
+        const d = new Date(ts);
+        const pad = n => String(n).padStart(2, '0');
+        return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;
+      }
+
+      function buildGoogleCalendarUrl(text, ts) {
+        const start = formatIcsDate(ts);
+        const end = formatIcsDate(ts + 15 * 60000);
+        const title = encodeURIComponent(`找找提醒：${text}`);
+        const details = encodeURIComponent(`語音尋物紀錄：${text}`);
+        return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${start}/${end}&details=${details}`;
+      }
+
+      function downloadIcsFile(text, ts) {
+        const start = formatIcsDate(ts);
+        const end = formatIcsDate(ts + 15 * 60000);
+        const stamp = formatIcsDate(Date.now());
+        const uid = `findit-${ts}@findit.app`;
+        const safeText = String(text || '').replace(/\n/g, ' ');
+        const ics = [
+          'BEGIN:VCALENDAR',
+          'VERSION:2.0',
+          'PRODID:-//FindIt//Voice Item Finder//ZH',
+          'BEGIN:VEVENT',
+          `UID:${uid}`,
+          `DTSTAMP:${stamp}`,
+          `DTSTART:${start}`,
+          `DTEND:${end}`,
+          `SUMMARY:找找提醒：${safeText}`,
+          `DESCRIPTION:語音尋物紀錄：${safeText}`,
+          'BEGIN:VALARM',
+          'TRIGGER:PT0M',
+          'ACTION:DISPLAY',
+          `DESCRIPTION:找找提醒：${safeText}`,
+          'END:VALARM',
+          'END:VEVENT',
+          'END:VCALENDAR'
+        ].join('\r\n');
+        const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'findit-reminder.ics';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+
+      function openCalendarSyncModal(rec) {
+        if (!rec || !rec.reminderAt) return;
+        activeCalendarRecord = rec;
+        document.getElementById('calSyncText').textContent = rec.text;
+        document.getElementById('calSyncTime').textContent = `提醒時間：${formatReminder(rec.reminderAt)}`;
+        document.getElementById('btnGoogleCal').href = buildGoogleCalendarUrl(rec.text, rec.reminderAt);
+        document.getElementById('calendarSyncModal').classList.remove('hidden');
+        if (window.lucide) lucide.createIcons();
+      }
+
+      function closeCalendarSyncModal() {
+        document.getElementById('calendarSyncModal').classList.add('hidden');
+        activeCalendarRecord = null;
+      }
+
+      function requestSystemNotification() {
+        try {
+          if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+          }
+        } catch (e) {}
+      }
+
       function commitRecordWithReminder(reminderTs) {
+        let savedRec = null;
         if (state.editingReminderId) {
           const target = state.records.find(r => r.id === state.editingReminderId);
           if (target) {
             target.reminderAt = reminderTs;
             target.triggered = false;
+            savedRec = target;
           }
           showToast(reminderTs ? '已更新提醒時間' : '已取消提醒');
         } else {
-          state.records.unshift({
+          savedRec = {
             id: 'rec-' + Date.now(),
             text: state.pendingTranscript,
             createdAt: Date.now(),
             reminderAt: reminderTs,
             triggered: false
-          });
+          };
+          state.records.unshift(savedRec);
           showToast(reminderTs ? '已儲存紀錄並設定提醒' : '已儲存語音紀錄');
         }
         saveState();
         closeReminderSheet();
         render();
+
+        if (reminderTs) {
+          requestSystemNotification();
+          if (reminderTs - Date.now() > 20000 && savedRec) {
+            openCalendarSyncModal(savedRec);
+          }
+        }
       }
 
       // Web Speech API Recording Flow
@@ -559,6 +685,11 @@
           document.getElementById('liveAlertText').textContent = fired.text;
           document.getElementById('liveAlertBanner').classList.remove('hidden');
           playChime();
+          try {
+            if ('Notification' in window && Notification.permission === 'granted') {
+              new Notification('找找尋物提醒時間到', { body: fired.text });
+            }
+          } catch (e) {}
           render();
         }
       }
@@ -597,6 +728,8 @@
           showToast('已標記為找回並移除');
         } else if (action === 'remind') {
           openReminderSheet(rec.text, rec.id);
+        } else if (action === 'calendar') {
+          openCalendarSyncModal(rec);
         }
       });
 
@@ -638,6 +771,19 @@
         if (icon) icon.setAttribute('data-lucide', state.soundEnabled ? 'volume-2' : 'volume-x');
         if (window.lucide) lucide.createIcons();
         showToast(state.soundEnabled ? '已開啟提醒音效' : '已靜音提醒音效');
+      });
+
+      document.getElementById('btnCloseCalModal').addEventListener('click', closeCalendarSyncModal);
+      document.getElementById('btnSkipCalSync').addEventListener('click', closeCalendarSyncModal);
+      document.getElementById('btnDownloadIcs').addEventListener('click', () => {
+        if (activeCalendarRecord && activeCalendarRecord.reminderAt) {
+          downloadIcsFile(activeCalendarRecord.text, activeCalendarRecord.reminderAt);
+          showToast('已產生行事曆檔案，請點選加入行事曆');
+          closeCalendarSyncModal();
+        }
+      });
+      document.getElementById('btnGoogleCal').addEventListener('click', () => {
+        setTimeout(closeCalendarSyncModal, 300);
       });
 
       loadState();
