@@ -203,7 +203,13 @@
 
         <!-- Recorded Voice Text Display -->
         <div class="bg-[#FAF8F4] border border-[#E8E4DC] rounded-2xl p-3.5 mb-3">
-          <p class="text-[11px] font-semibold text-slate-400 mb-1">剛剛錄下的內容</p>
+          <div class="flex items-center justify-between gap-2 mb-1">
+            <p class="text-[11px] font-semibold text-slate-400">剛剛錄下的內容</p>
+            <button id="btnRerecord" type="button" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-orange-100 hover:bg-orange-200 text-orange-700 text-[11px] font-bold active:scale-95 transition">
+              <i data-lucide="rotate-ccw" class="w-3 h-3"></i>
+              錄錯了，重新錄音
+            </button>
+          </div>
           <p id="sheetTranscriptText" class="text-sm font-bold text-slate-900 leading-relaxed"></p>
         </div>
 
@@ -592,6 +598,7 @@
       function openReminderSheet(transcriptText, existingId = null) {
         state.pendingTranscript = transcriptText;
         state.editingReminderId = existingId;
+        document.getElementById('btnRerecord').classList.toggle('hidden', Boolean(existingId));
         document.getElementById('sheetTranscriptText').textContent = transcriptText;
 
         detectedAutoTs = existingId ? null : parseReminderFromSpeech(transcriptText);
@@ -748,12 +755,22 @@
         }
       }
 
-      function finishRecording() {
-        const text = capturedSpeech.trim();
+      function cleanupRecognition() {
         if (recognition) {
-          try { recognition.stop(); } catch (e) {}
+          try {
+            recognition.onstart = null;
+            recognition.onresult = null;
+            recognition.onerror = null;
+            recognition.onend = null;
+            recognition.abort();
+          } catch (e) {}
           recognition = null;
         }
+      }
+
+      function finishRecording() {
+        const text = capturedSpeech.trim();
+        cleanupRecognition();
         setRecordingUI(false);
         if (text) {
           openReminderSheet(text);
@@ -768,13 +785,14 @@
           showToast('此環境不支援即時麥克風，請點選下方範例體驗');
           return;
         }
+        cleanupRecognition();
         capturedSpeech = '';
         document.getElementById('liveTranscript').textContent = '正在聆聽...';
         try {
           recognition = new SpeechRecognition();
           recognition.lang = 'zh-TW';
           recognition.interimResults = true;
-          recognition.continuous = true;
+          recognition.continuous = false;
 
           recognition.onstart = () => {
             setRecordingUI(true);
@@ -789,10 +807,15 @@
             document.getElementById('liveTranscript').textContent = full || '正在聆聽...';
           };
 
-          recognition.onerror = () => {
+          recognition.onerror = (err) => {
+            const errType = err && err.error ? err.error : '';
+            cleanupRecognition();
             setRecordingUI(false);
-            recognition = null;
-            showToast('無法存取麥克風權限，可點選下方範例體驗');
+            if (errType === 'no-speech') {
+              showToast('沒有聽到聲音，請點擊麥克風再說一次');
+            } else if (errType !== 'aborted') {
+              showToast('無法存取麥克風權限，可點選下方範例體驗');
+            }
           };
 
           recognition.onend = () => {
@@ -803,8 +826,9 @@
 
           recognition.start();
         } catch (e) {
+          cleanupRecognition();
           setRecordingUI(false);
-          showToast('無法啟動麥克風，請改用下方範例測試');
+          showToast('無法啟動麥克風，請再點擊一次重試');
         }
       }
 
@@ -872,6 +896,12 @@
       });
 
       document.getElementById('btnCancelSheet').addEventListener('click', closeReminderSheet);
+      document.getElementById('btnRerecord').addEventListener('click', () => {
+        closeReminderSheet();
+        state.activeTab = 'record';
+        render();
+        setTimeout(() => startRecording(), 180);
+      });
       document.getElementById('btnConfirmAutoTime').addEventListener('click', () => {
         if (detectedAutoTs) {
           commitRecordWithReminder(detectedAutoTs);
